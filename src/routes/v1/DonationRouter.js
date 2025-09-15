@@ -22,8 +22,8 @@ router.post("/get-donation-token", async (req, res) => {
   setting.setSettingValue(
     JSON.stringify({
       showReceipt: false,
-      url: "http://localhost:3000/donation-success",
-      cancelUrl: "http://localhost:3000/donation-cancel",
+      url: "https://connectwithus.vercel.app/donation-success",
+      cancelUrl: "https://connectwithus.vercel.app/donation-cancel",
     })
   );
 
