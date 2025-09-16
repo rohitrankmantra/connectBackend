@@ -5,24 +5,92 @@ const nodemailer = require("nodemailer");
 
 const API_LOGIN_ID = process.env.API_LOGIN_ID;
 const TRANSACTION_KEY = process.env.TRANSACTION_KEY;
+const AUTHORIZE_MODE = process.env.AUTHORIZE_MODE || "SANDBOX"; 
+
+// router.post("/get-donation-token", async (req, res) => {
+//   const { amount } = req.body;
+
+//   // 🟢 Debug Logs
+//   console.log("👉 /get-donation-token called with amount:", amount);
+//   console.log("👉 API_LOGIN_ID:", API_LOGIN_ID ? "Loaded ✅" : "MISSING ❌");
+//   console.log("👉 TRANSACTION_KEY:", TRANSACTION_KEY ? "Loaded ✅" : "MISSING ❌");
+
+//   try {
+//     const merchantAuthentication = new APIContracts.MerchantAuthenticationType();
+//     merchantAuthentication.setName(API_LOGIN_ID);
+//     merchantAuthentication.setTransactionKey(TRANSACTION_KEY);
+
+//     const transactionRequest = new APIContracts.TransactionRequestType();
+//     transactionRequest.setTransactionType("authCaptureTransaction");
+//     transactionRequest.setAmount(parseFloat(amount));
+
+//     const setting = new APIContracts.SettingType();
+//     setting.setSettingName("hostedPaymentReturnOptions");
+//     setting.setSettingValue(
+//       JSON.stringify({
+//         showReceipt: false,
+//         url: "https://connectwithus.vercel.app/donation-success",
+//         cancelUrl: "https://connectwithus.vercel.app/donation-cancel",
+//       })
+//     );
+
+//     const request = new APIContracts.GetHostedPaymentPageRequest();
+//     request.setMerchantAuthentication(merchantAuthentication);
+//     request.setTransactionRequest(transactionRequest);
+//     request.setHostedPaymentSettings(new APIContracts.ArrayOfSetting([setting]));
+
+//     const controller = new APIControllers.GetHostedPaymentPageController(
+//       request.getJSON()
+//     );
+
+//     console.log("👉 Sending request to Authorize.Net...");
+
+//     controller.execute(() => {
+//       const apiResponse = controller.getResponse();
+//       console.log("👉 Raw Authorize.Net Response:", apiResponse);
+
+//       const response = new APIContracts.GetHostedPaymentPageResponse(apiResponse);
+
+//       if (response.getMessages().getResultCode() === APIContracts.MessageTypeEnum.OK) {
+//         console.log("✅ Token generated successfully:", response.getToken());
+//         res.json({ success: true, token: response.getToken() });
+//       } else {
+//         const errMsg = response.getMessages().getMessage()[0].getText();
+//         console.error("❌ Authorize.Net Error:", errMsg);
+//         res.status(500).json({
+//           success: false,
+//           message: errMsg,
+//         });
+//       }
+//     });
+//   } catch (err) {
+//     console.error("🔥 Server Error in /get-donation-token:", err);
+//     res.status(500).json({ success: false, message: "Internal Server Error" });
+//   }
+// });
+
+
 
 router.post("/get-donation-token", async (req, res) => {
   const { amount } = req.body;
 
-  // 🟢 Debug Logs
   console.log("👉 /get-donation-token called with amount:", amount);
   console.log("👉 API_LOGIN_ID:", API_LOGIN_ID ? "Loaded ✅" : "MISSING ❌");
   console.log("👉 TRANSACTION_KEY:", TRANSACTION_KEY ? "Loaded ✅" : "MISSING ❌");
+  console.log("👉 Running in mode:", AUTHORIZE_MODE);
 
   try {
+    // 🟢 Merchant Authentication
     const merchantAuthentication = new APIContracts.MerchantAuthenticationType();
     merchantAuthentication.setName(API_LOGIN_ID);
     merchantAuthentication.setTransactionKey(TRANSACTION_KEY);
 
+    // 🟢 Transaction Request
     const transactionRequest = new APIContracts.TransactionRequestType();
     transactionRequest.setTransactionType("authCaptureTransaction");
     transactionRequest.setAmount(parseFloat(amount));
 
+    // 🟢 Payment Page Settings
     const setting = new APIContracts.SettingType();
     setting.setSettingName("hostedPaymentReturnOptions");
     setting.setSettingValue(
@@ -38,11 +106,19 @@ router.post("/get-donation-token", async (req, res) => {
     request.setTransactionRequest(transactionRequest);
     request.setHostedPaymentSettings(new APIContracts.ArrayOfSetting([setting]));
 
+    // 🟢 Controller
     const controller = new APIControllers.GetHostedPaymentPageController(
       request.getJSON()
     );
 
-    console.log("👉 Sending request to Authorize.Net...");
+    // Switch ENVIRONMENT based on .env
+    if (AUTHORIZE_MODE === "PRODUCTION") {
+      controller.setEnvironment(APIContracts.Constants.PRODUCTION_HOST);
+    } else {
+      controller.setEnvironment(APIContracts.Constants.SANDBOX_HOST);
+    }
+
+    console.log(`👉 Sending request to Authorize.Net (${AUTHORIZE_MODE})...`);
 
     controller.execute(() => {
       const apiResponse = controller.getResponse();
@@ -67,7 +143,6 @@ router.post("/get-donation-token", async (req, res) => {
     res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 });
-
 
 router.post("/send-thankyou", async (req, res) => {
   const { name, email, phone, amount } = req.body;
