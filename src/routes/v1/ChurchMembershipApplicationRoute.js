@@ -9,7 +9,7 @@ router.get(
   churchMembershipApplicationController.getChurchMembershipApplications
 );
 
-// POST a new church membership application with passport photo upload
+// POST a new church membership application with passport photo upload 
 router.post(
   "/",
   upload.single("passportPhoto"),
