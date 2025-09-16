@@ -111,12 +111,12 @@ router.post("/get-donation-token", async (req, res) => {
       request.getJSON()
     );
 
-    // Switch ENVIRONMENT based on .env
-    if (AUTHORIZE_MODE === "PRODUCTION") {
-      controller.setEnvironment(APIContracts.Constants.PRODUCTION_HOST);
-    } else {
-      controller.setEnvironment(APIContracts.Constants.SANDBOX_HOST);
-    }
+   // ✅ Correct way
+if (AUTHORIZE_MODE === "PRODUCTION") {
+  controller.setEnvironment(APIControllers.constants.endpoint.production);
+} else {
+  controller.setEnvironment(APIControllers.constants.endpoint.sandbox);
+}
 
     console.log(`👉 Sending request to Authorize.Net (${AUTHORIZE_MODE})...`);
 
