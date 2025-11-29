@@ -2,91 +2,134 @@ const express = require("express");
 const { APIContracts, APIControllers } = require("authorizenet");
 const router = express.Router();
 const nodemailer = require("nodemailer");
+const dotenv = require("dotenv");
+dotenv.config();
 
+// 🔐 Environment Variables
 const API_LOGIN_ID = process.env.API_LOGIN_ID;
 const TRANSACTION_KEY = process.env.TRANSACTION_KEY;
-const AUTHORIZE_MODE = process.env.AUTHORIZE_MODE || "SANDBOX"; 
+const AUTHORIZE_MODE = process.env.AUTHORIZE_MODE || "SANDBOX";
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://connectwithus.vercel.app";
+
+// -------------------------------
+// ⭐ Utility: Authorize.Net ENV
+// -------------------------------
+const AUTHORIZE_API_URL =
+  AUTHORIZE_MODE === "PRODUCTION"
+    ? "https://api2.authorize.net/xml/v1/request.api"
+    : "https://apitest.authorize.net/xml/v1/request.api";
+
+const PAYMENT_URL =
+  AUTHORIZE_MODE === "PRODUCTION"
+    ? "https://accept.authorize.net/payment/payment"
+    : "https://test.authorize.net/payment/payment";
+
+// =====================================================================
+// 🔵 ROUTE 1: Get Hosted Payment Token
+// =====================================================================
 router.post("/get-donation-token", async (req, res) => {
   const { amount } = req.body;
+
+  if (!amount || isNaN(amount) || Number(amount) <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid amount",
+    });
+  }
+
   try {
-    // 🟢 Merchant Authentication
+    // Merchant Authentication
     const merchantAuthentication = new APIContracts.MerchantAuthenticationType();
     merchantAuthentication.setName(API_LOGIN_ID);
     merchantAuthentication.setTransactionKey(TRANSACTION_KEY);
 
-    // 🟢 Transaction Request
+    // Transaction
     const transactionRequest = new APIContracts.TransactionRequestType();
     transactionRequest.setTransactionType("authCaptureTransaction");
     transactionRequest.setAmount(parseFloat(amount));
 
-    // 🟢 Payment Page Settings
-    const setting = new APIContracts.SettingType();
-    setting.setSettingName("hostedPaymentReturnOptions");
-    setting.setSettingValue(
+    // Payment Page Settings
+    const settingsArray = [];
+
+    const returnSetting = new APIContracts.SettingType();
+    returnSetting.setSettingName("hostedPaymentReturnOptions");
+    returnSetting.setSettingValue(
       JSON.stringify({
         showReceipt: false,
-        url: "https://connectwithus.vercel.app/donation-success",
-        cancelUrl: "https://connectwithus.vercel.app/donation-cancel",
+        url: `${FRONTEND_URL}/donation-success`,
+        cancelUrl: `${FRONTEND_URL}/donation-cancel`,
       })
     );
 
+    settingsArray.push(returnSetting);
+
+    const settings = new APIContracts.ArrayOfSetting();
+    settings.setSetting(settingsArray);
+
+    // Request
     const request = new APIContracts.GetHostedPaymentPageRequest();
     request.setMerchantAuthentication(merchantAuthentication);
     request.setTransactionRequest(transactionRequest);
-    request.setHostedPaymentSettings(new APIContracts.ArrayOfSetting([setting]));
+    request.setHostedPaymentSettings(settings);
 
-    // 🟢 Controller
     const controller = new APIControllers.GetHostedPaymentPageController(
       request.getJSON()
     );
 
-    // ✅ Environment Selection
-    if (AUTHORIZE_MODE === "PRODUCTION") {
-      controller.setEnvironment("https://api2.authorize.net/xml/v1/request.api");
-    } else {
-      controller.setEnvironment("https://apitest.authorize.net/xml/v1/request.api");
-    }
+    controller.setEnvironment(AUTHORIZE_API_URL);
 
-
+    // Execute request
     controller.execute(() => {
       const apiResponse = controller.getResponse();
-      console.log("👉 Raw Authorize.Net Response:", apiResponse);
-
       const response = new APIContracts.GetHostedPaymentPageResponse(apiResponse);
 
-  if (response.getMessages().getResultCode() === APIContracts.MessageTypeEnum.OK) {
-  const token = response.getToken();
-  const paymentUrl =
-    AUTHORIZE_MODE === "PRODUCTION"
-      ? "https://accept.authorize.net/payment/payment"
-      : "https://test.authorize.net/payment/payment";
+      if (!response || !response.getMessages()) {
+        return res.status(500).json({
+          success: false,
+          message: "Invalid response from Authorize.Net",
+        });
+      }
 
-      const respData = { success: true, token, paymentUrl };
-    res.json(respData);
-} else {
-  const errMsg = response.getMessages().getMessage()[0].getText();
-  console.error("❌ Authorize.Net Error:", errMsg);
-  res.status(500).json({
-    success: false,
-    message: errMsg,
-  });
-}
+      if (response.getMessages().getResultCode() === APIContracts.MessageTypeEnum.OK) {
+        const token = response.getToken();
+        return res.json({
+          success: true,
+          token,
+          paymentUrl: PAYMENT_URL,
+        });
+      }
+
+      const errMsg = response.getMessages().getMessage()[0].getText();
+      console.error("Authorize.Net Error:", errMsg);
+
+      return res.status(500).json({
+        success: false,
+        message: errMsg,
+      });
     });
-  } catch (err) {
-    console.error("🔥 Server Error in /get-donation-token:", err);
-    res.status(500).json({ success: false, message: "Internal Server Error" });
+  } catch (error) {
+    console.error("Server Error in /get-donation-token:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+    });
   }
 });
 
-
+// =====================================================================
+// 🔵 ROUTE 2: Send Thank You Email
+// =====================================================================
 router.post("/send-thankyou", async (req, res) => {
   const { name, email, phone, amount } = req.body;
+  console.log("📩 Email API Hit!");
+console.log(req.body);
 
-  if (!email || !name || !amount) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Missing required fields" });
+  if (!name || !email || !amount) {
+    return res.status(400).json({
+      success: false,
+      message: "Missing required fields",
+    });
   }
 
   try {
@@ -97,63 +140,43 @@ router.post("/send-thankyou", async (req, res) => {
         pass: process.env.MAIL_PASS,
       },
       port: 587,
-  secure: false,
+      secure: false,
     });
 
-    const mailOptions = {
-      from: `"National Fellowship Conference" <${process.env.MAIL_USER}>`,
-      to: email,
-      subject: "Your Donation Receipt",
-      html: `
-      <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333; background: #f9f9f9; padding: 20px;">
-        <div style="max-width: 700px; margin: auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
+    const htmlContent = `
+      <div style="font-family: Arial, sans-serif; color: #333; background: #f9f9f9; padding: 20px;">
+        <div style="max-width: 700px; margin: auto; background: #fff; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); overflow: hidden;">
           
           <div style="background: #2c3e50; color: #fff; padding: 25px; text-align: center;">
-            <h1 style="margin: 0; font-size: 24px;">Thank You for Your Donation</h1>
+            <h1>Thank You for Your Donation</h1>
           </div>
 
-          <div style="padding: 25px; line-height: 1.6; font-size: 15px; color: #333;">
+          <div style="padding: 25px; line-height: 1.6; font-size: 15px;">
             <p>Dear ${name},</p>
-            
+
             <p>
               Thank you for your generous donation of 
-              <strong style="color: #27ae60;">$${amount}</strong>. 
-              Your contribution means a lot and will be put to good use in making a difference.
+              <strong style="color:#27ae60;">$${amount}</strong>.
             </p>
-            
+
             <p>
-              We have sent your donation receipt to your email.
-              <br /><br />
-              <strong>The National Fellowship Conference of Christian Churches, Inc.</strong><br/>
+              <strong>The National Fellowship Conference of Christian Churches, Inc.</strong><br>
               <strong>Tax Deductible IRS EIN: 22-2513753</strong>
             </p>
 
             <p>
-              On behalf of the Board of Governors, Members, and Partners, we extend our gratitude and appreciation 
-              for your support of our Ministries. It is our aim to obey and fulfill the Great Commission of Jesus Christ, 
-              by going into all the world, sharing the good news of the love of God and the testimony of Jesus Christ to everyone 
-              who will hear it. Using media, discipleship, training and education and mission programs, your contributions 
-              support these endeavors in addition to general operations.
+              Your contribution helps support our mission programs, education, discipleship,
+              and global outreach efforts.
             </p>
 
             <p>
-              The Board of Governors, Finance Committee will always direct funds received to the areas of ministry most needed, 
-              and the use of all funds are with the highest degree of integrity and best practices.
+              With gratitude,<br>
+              <strong>Dr. Gary Kirkwood, Sr.<br>The Board of Governors</strong>
             </p>
 
-            <p>
-              Thank you for participating in our Tithes and Offerings, Semi-annual Impact Giving, 
-              Reach 1070 Covenant Faith Partner programs, and Unique Events.
-            </p>
+            <hr style="margin: 30px 0; border-top: 1px solid #eee;">
 
-            <p>
-              With gratitude,<br/>
-              <strong>Dr. Gary Kirkwood, Sr.<br/>The Board of Governors</strong>
-            </p>
-
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;"/>
-
-            <p><strong>List of Ministries:</strong></p>
+            <p><strong>Ministries Supported:</strong></p>
             <ul>
               <li>Scripture Church</li>
               <li>Tapon Media Marketing Group</li>
@@ -166,25 +189,33 @@ router.post("/send-thankyou", async (req, res) => {
               <li>Unlimited Career Training Institute</li>
             </ul>
 
-            <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;"/>
+            <hr style="margin: 30px 0; border-top: 1px solid #eee;">
 
             <p style="font-size: 13px; color: #777;">
-              If you have any questions, please don't hesitate to contact us.<br/>
               <strong>Phone:</strong> ${phone || "N/A"}
             </p>
           </div>
         </div>
       </div>
-      `,
-    };
+    `;
 
-    await transporter.sendMail(mailOptions);
-    res.json({ success: true });
+    await transporter.sendMail({
+      from: `"National Fellowship Conference" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: "Your Donation Receipt",
+      html: htmlContent,
+    });
+
+    return res.json({ success: true });
+    
+
   } catch (error) {
-    console.error("Email sending error:", error);
-    res.status(500).json({ success: false, message: "Email sending failed." });
+    console.error("Email Error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Email sending failed.",
+    });
   }
 });
-
 
 module.exports = router;

@@ -12,6 +12,7 @@ const eventAttendanceRegistrationVerificationFormRoute = require("./EventAttenda
 const meetingOrPersonalMinistryRequestRoute = require("./MeetingOrPersonalMinistryRequestRoute.js");
 const partnerCardRoute = require("./PartnerCardRoute.js");
 const donationRoute = require("./DonationRouter.js");
+const paypalMailRoute = require("./PayPalMailRoute");
 
 router.use("/health", healthCheck);
 router.use("/associate-member", associateMemberRoute);
@@ -31,5 +32,6 @@ router.use(
 );
 router.use("/partner-card", partnerCardRoute);
 router.use("/donate", donationRoute);
+router.use("/paypal", paypalMailRoute);
 
 module.exports = router;
