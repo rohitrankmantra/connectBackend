@@ -133,15 +133,16 @@ console.log(req.body);
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: "Gmail",
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASS,
-      },
-      port: 587,
-      secure: false,
-    });
+   const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: process.env.MAIL_USER,
+    pass: process.env.MAIL_PASS,
+  },
+  tls: { rejectUnauthorized: false },
+});
 
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; color: #333; background: #f9f9f9; padding: 20px;">
